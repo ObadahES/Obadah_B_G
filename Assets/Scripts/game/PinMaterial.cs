@@ -17,6 +17,16 @@ public class ProceduralBowlingPin : MonoBehaviour
     public float bottomRadius = 0.15f;
     public float neckRadius = 0.05f;
 
+    [Header("Mass-Spring Physics")]
+    public float pointMass = 0.2f;
+    public float springStiffness = 200f;
+    public float springDamping = 2f;
+    public Tetrahedralizer tetrahedralizer; // اربطه في الـ Inspector أو أنشئه أوتوماتيكياً
+
+    [HideInInspector]
+    public MassSpring massSpring;
+
+
     [Header("Rendering Materials")]
     public PhysicsType physicsType = PhysicsType.Solid;
     public Material solidVisual;
@@ -35,7 +45,28 @@ public class ProceduralBowlingPin : MonoBehaviour
     {
         BuildMesh();
         SetupVisual();
+
+        if (tetrahedralizer == null)
+            tetrahedralizer = gameObject.AddComponent<Tetrahedralizer>();
+
+        // لا حاجة لهذه بعد الآن:
+        // tetrahedralizer.radius = maxRadius;
+
+        tetrahedralizer.internalResolution = 10;
+        tetrahedralizer.Initialize(pinMesh);
+
+        massSpring = new MassSpring();
+        foreach (var (p0, p1, p2, p3) in tetrahedralizer.tetrahedra)
+        {
+            Vector3 wp0 = transform.TransformPoint(p0);
+            Vector3 wp1 = transform.TransformPoint(p1);
+            Vector3 wp2 = transform.TransformPoint(p2);
+            Vector3 wp3 = transform.TransformPoint(p3);
+
+            massSpring.AddTetrahedron(wp0, wp1, wp2, wp3, pointMass, springStiffness, springDamping);
+        }
     }
+
 
     void Update()
     {
@@ -52,6 +83,48 @@ public class ProceduralBowlingPin : MonoBehaviour
         {
             BuildMesh();
             SetupVisual();
+        }
+    }
+    void FixedUpdate()
+    {
+        if (Application.isPlaying && massSpring != null)
+        {
+            massSpring.Simulate(Time.fixedDeltaTime);
+            UpdateMeshVertices();
+        }
+    }
+
+    void UpdateMeshVertices()
+    {
+        var mesh = GetComponent<MeshFilter>().mesh;
+        var verts = mesh.vertices;
+        var updatedPositions = massSpring.GetPositions();
+
+        if (updatedPositions.Count != verts.Length) return; // تأكد أن الأعداد تطابق
+
+        for (int i = 0; i < verts.Length; i++)
+        {
+            // تحويل من إحداثيات عالمية إلى محلية قبل التحديث
+            verts[i] = transform.InverseTransformPoint(updatedPositions[i]);
+        }
+
+        mesh.vertices = verts;
+        mesh.RecalculateNormals();
+    }
+
+
+    public void ApplyImpact(Vector3 position, Vector3 direction, float magnitude)
+    {
+        massSpring.ApplyImpulse(position, direction, magnitude, influenceRadius: 0.3f);
+
+        if (physicsType == PhysicsType.Glass && magnitude > breakSoundThreshold)
+        {
+            if (glassBreakClip)
+                AudioSource.PlayClipAtPoint(glassBreakClip, transform.position);
+            if (glassShatterPrefab)
+                Instantiate(glassShatterPrefab, transform.position, transform.rotation);
+
+            Destroy(gameObject); // أو افصل الـ Mesh وأضف جسيمات
         }
     }
 

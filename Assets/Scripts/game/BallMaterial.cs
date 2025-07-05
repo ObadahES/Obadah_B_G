@@ -1,9 +1,15 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
 [ExecuteInEditMode]
 public class ProceduralSphere : MonoBehaviour
 {
+    public MassSpring massSpring;
+    public float springStiffness = 500f;
+    public float springDamping = 5f;
+    public float pointMass = 1f;
+
     public enum MaterialType { Solid, Rubber, Glass, Tin }
 
     [Tooltip("اختر نوع المادة الفيزيائية للكرة")]
@@ -13,7 +19,6 @@ public class ProceduralSphere : MonoBehaviour
     public Material rubberVisualMaterial;
     public Material glassVisualMaterial;
     public Material tinVisualMaterial;
-
 
     [Header("Sphere Geometry")]
     public int longitudeSegments = 24;
@@ -25,7 +30,6 @@ public class ProceduralSphere : MonoBehaviour
     public float breakForceThreshold = 10f;
 
     [Header("Sounds")]
-
     public AudioClip breakSound;
     public AudioClip hitPinSound;
 
@@ -42,12 +46,23 @@ public class ProceduralSphere : MonoBehaviour
     private Vector3 previousPosition;
     private Vector3 currentVelocity;
 
+
+    void Awake()
+    {
+        GenerateSphere();
+        InitializeMassSpring();
+    }
+
+
+
     void Start()
     {
         ApplyMaterials();
-        GenerateSphere();
+
         previousPosition = transform.position;
     }
+
+
 
     void Update()
     {
@@ -65,6 +80,28 @@ public class ProceduralSphere : MonoBehaviour
         }
     }
 
+    void InitializeMassSpring()
+    {
+        massSpring = new MassSpring();
+
+        foreach (var v in vertices)
+            massSpring.AddMassPoint(v, pointMass, false);
+    }
+
+    void OnDrawGizmos()
+    {
+        if (massSpring != null)
+        {
+            Gizmos.color = Color.yellow;
+            foreach (var spring in massSpring.Springs)
+            {
+                Vector3 pA = transform.TransformPoint(massSpring.Points[spring.PointA].Position);
+                Vector3 pB = transform.TransformPoint(massSpring.Points[spring.PointB].Position);
+                Gizmos.DrawLine(pA, pB);
+            }
+        }
+    }
+
     void FixedUpdate()
     {
         if (isMoving && !isBroken)
@@ -73,6 +110,18 @@ public class ProceduralSphere : MonoBehaviour
             transform.position += Vector3.left * moveSpeed * Time.fixedDeltaTime;
             currentVelocity = (transform.position - previousPosition) / Time.fixedDeltaTime;
             previousPosition = currentPosition;
+
+            massSpring?.Simulate(Time.fixedDeltaTime);
+
+            var newPositions = massSpring.GetPositions();
+
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                vertices[i] = newPositions[i];
+            }
+
+            mesh.vertices = vertices;
+            mesh.RecalculateNormals();
 
             CheckCollisionsWithAllPins();
         }
@@ -303,10 +352,21 @@ public class ProceduralSphere : MonoBehaviour
         newPos.y = pin.transform.position.y;
         pin.transform.position = newPos;
 
-        if (materialType == MaterialType.Tin)
+        //عند الاصطدام، ستنتقل دفعة من القوة إلى نقاط MassSpring
+        if (massSpring != null)
         {
-            ApplyTinDent(sphereCenter, pin.transform.position, dentRadius, dentDepth);
+            Vector3 impactPoint = (sphereCenter + pin.transform.position) * 0.5f;
+            Vector3 localImpact = transform.InverseTransformPoint(impactPoint);
+            float impactStrength = currentVelocity.magnitude * pointMass;
+
+            // طبق دفعة على MassSpring
+            massSpring.ApplyImpulse(localImpact, -currentVelocity.normalized, impactStrength, dentRadius);
         }
+
+        // if (materialType == MaterialType.Tin)
+        // {
+        //     ApplyTinDent(sphereCenter, pin.transform.position, dentRadius, dentDepth);
+        // }
 
         // تشغيل صوت اصطدام الكرة بالـ pin
         if (hitPinSound != null)

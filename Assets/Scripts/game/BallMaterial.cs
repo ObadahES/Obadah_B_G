@@ -88,6 +88,9 @@ public class ProceduralSphere : MonoBehaviour
             massSpring.AddMassPoint(v, pointMass, false);
     }
 
+
+
+
     void OnDrawGizmos()
     {
         if (massSpring != null)
@@ -115,7 +118,8 @@ public class ProceduralSphere : MonoBehaviour
 
             var newPositions = massSpring.GetPositions();
 
-            for (int i = 0; i < vertices.Length; i++)
+            int count = Mathf.Min(vertices.Length, newPositions.Count);
+            for (int i = 0; i < count; i++)
             {
                 vertices[i] = newPositions[i];
             }
@@ -126,6 +130,7 @@ public class ProceduralSphere : MonoBehaviour
             CheckCollisionsWithAllPins();
         }
     }
+
 
     void ApplyMaterials()
     {
@@ -360,7 +365,7 @@ public class ProceduralSphere : MonoBehaviour
             float impactStrength = currentVelocity.magnitude * pointMass;
 
             // طبق دفعة على MassSpring
-            massSpring.ApplyImpulse(localImpact, -currentVelocity.normalized, impactStrength, dentRadius);
+            // massSpring.ApplyImpulse(localImpact, -currentVelocity.normalized, impactStrength, dentRadius);
         }
 
         // if (materialType == MaterialType.Tin)
